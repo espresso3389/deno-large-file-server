@@ -9,8 +9,8 @@ import { Sha256, Sha256State } from "./sha256.ts";
 /** It's important to have a restriction on request size to reduce server load. */
 const rangeRequestMaxBytes = 1024 * 1024;
 
-const port = 3000;
-const baseUri = `http://localhost:${port}`;
+const port = Number(Deno.env.get("APPSERVER_PORT") || 3000);
+const baseUri = Deno.env.get("APPSERVER_BASEURI") || `http://localhost:${port}`;
 
 interface FileInfo {
   /**

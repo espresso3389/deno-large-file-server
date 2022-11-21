@@ -6,6 +6,8 @@ services:
       - 3456:3000
     volumes:
       - uploaded_contents:/server/data
+    environment:
+      - APPSERVER_BASEURI=http://localhost:3456
 
 volumes:
   uploaded_contents:
