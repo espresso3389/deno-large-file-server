@@ -1,0 +1,11 @@
+services:
+  file-server:
+    container_name: file-server
+    build: ./
+    ports:
+      - 3456:3000
+    volumes:
+      - uploaded_contents:/server/data
+
+volumes:
+  uploaded_contents:
