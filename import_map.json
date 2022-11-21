@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "buffer": "https://deno.land/std@0.165.0/io/buffer.ts",
+    "hextools": "https://deno.land/x/hextools@v1.0.0/mod.ts",
+    "file_server": "https://deno.land/std@0.165.0/http/file_server.ts",
+    "server": "https://deno.land/std@0.165.0/http/server.ts",
+    "os": "https://deno.land/x/dos@v0.11.0/mod.ts",
+    "path": "https://deno.land/std@0.165.0/path/mod.ts"
+  },
+  "scopes": {}
+}

@@ -1,0 +1,50 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": [
+      "deno.window"
+    ],
+    "strict": true
+  },
+  "importMap": "./import_map.json",
+  "lint": {
+    "files": {
+      "include": [
+        "./src/"
+      ],
+      "exclude": []
+    },
+    "rules": {
+      "tags": [
+        "recommended"
+      ],
+      "include": [
+        "ban-untagged-todo"
+      ],
+      "exclude": [
+        "no-unused-vars"
+      ]
+    }
+  },
+  "fmt": {
+    "files": {
+      "include": [
+        "./src/"
+      ],
+      "exclude": []
+    },
+    "options": {
+      "useTabs": false,
+      "lineWidth": 120,
+      "indentWidth": 2,
+      "singleQuote": false,
+      "proseWrap": "preserve"
+    }
+  },
+  "tasks": {
+    "update-cache": "deno cache --reload ./src/index.ts",
+    "lint": "deno lint && deno fmt --check",
+    "fmt": "deno fmt",
+    "update": "deno run --allow-read=./ --allow-net --allow-write=./ https://deno.land/x/deno_outdated@0.2.4/cli.ts --ignore README.md CHANGELOG.md CONTRIBUTING.md"
+  }
+}

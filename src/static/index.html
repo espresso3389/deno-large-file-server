@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>File range access sample</title>
+    <style>
+      th.a {border: 1px solid; padding: 4px; background-color: #659cef;}
+      td.a {border: 1px solid; padding: 4px;}
+    </style>
+  </head>
+  <body>
+    <h1>Testing file upload</h1>
+    <form>
+      <div id="filesPlaceholder"></div><br>
+      <div id="drop-file" style="border: 1px solid; padding: 20px;">
+        <p>Drop file here!</p>
+        <input type="file" name="file" id="select-file">
+      </div>
+      <div style="background-color: #000000;">
+        <span id="progressBar" style="width: 0%; display: block; height: 5px; background-color: #659cef;"></span>
+      </div>
+      <span id="progressIndicator"></span><br>
+      <span id="fileNameIndicator"></span><br>
+      <div id="contentPlaceholder"></div><br>
+    </form>
+    <script>
+      /**
+       * @typedef {{id: string, name: String, contentType: string, size: number, lastUpdate: string, sha256: string, uri: string}} ApiFile
+       * @typedef {{bytesUploaded: number, bytesTotal: number}} ProgressParams
+       * @typedef {(prog: ProgressParams) => Promise<void>|void} OnProgress
+       * @typedef {(file: ApiFile) => Promise<void>|void} OnUploadFinished
+       * @typedef {{file: File, onProgress: OnProgress, onUploadFinished: OnUploadFinished}} UploadConfig
+       * @typedef {UploadConfig & {json: ApiFile}} UploadContext
+       */
+
+      /**
+       * 指定されたファイルを自動的にアップロードする
+       * @param config {UploadConfig}
+       */
+      async function uploadFile(config) {
+        // ファイルに対応するエントリを作成する
+        const res = await fetch("/api/v1/files/", {
+          method: "POST",
+          cache: "no-cache",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: config.file.name,
+            contentType: config.file.type,
+          }),
+        });
+        /** @type {ApiFile} */
+        const json = await res.json();
+        handleChunk(Object.assign({ json }, config));
+      }
+
+      /**
+       * @param ctx {UploadContext} アップロード対象の情報
+       * @param offset {number} アップロードするファイルの部分のオフセット(既定値は0)
+       * @param chunkSize {number} 一度にアップロードするサイズ(既定値は1MB)
+       * @param fr {FileReader} 内部で使い回す {@link FileReader}
+       */
+      function handleChunk(
+        ctx,
+        offset = 0,
+        chunkSize = 1024 * 1024,
+        fr = new FileReader()
+      ) {
+        if (offset >= ctx.file.size) return;
+
+        const chunk = ctx.file.slice(
+          offset,
+          Math.min(ctx.file.size, offset + chunkSize)
+        );
+        const isLastChunk = offset + chunk.size === ctx.file.size; // このチャンクが最後かどうか
+        const query = `?offset=${offset}${isLastChunk ? "&finalize" : ""}`;
+        fr.onload = async () => {
+          const res = await fetch(`${ctx.json.uri}/upload${query}`, {
+            method: "POST",
+            cache: "no-cache",
+            headers: { "Content-Type": "application/octet-stream" },
+            body: chunk,
+          });
+          const bytesRead = offset + chunk.size;
+          ctx.onProgress({ bytesUploaded: bytesRead, bytesTotal: ctx.file.size });
+          if (!isLastChunk) {
+            // まだ最後のチャンクでないのならば、次のチャンクをアップロードする
+            handleChunk(ctx, offset + chunk.size, chunkSize, fr);
+          } else {
+            /** @type {ApiFile} */
+            const resultFile = await res.json();
+            // アップロード処理完了
+            ctx.onUploadFinished(resultFile);
+          }
+        };
+        fr.readAsArrayBuffer(chunk);
+      }
+
+      //
+      // UIの制御
+      //
+      const filesPlaceholder = document.getElementById('filesPlaceholder');
+      const dropZone = document.getElementById('drop-file');
+      const fileInput = document.getElementById('select-file');
+      const progressBar = document.getElementById('progressBar');
+      const progressIndicator = document.getElementById('progressIndicator');
+      const fileNameIndicator = document.getElementById('fileNameIndicator');
+      const contentPlaceholder = document.getElementById('contentPlaceholder');
+      // タダのエフェクト
+      dropZone.addEventListener('dragover', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.background = '#e1e7f0';
+      }, false);
+      dropZone.addEventListener('dragleave', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.background = '#ffffff';
+      }, false);
+      // ファイルをドラッグ&ドロップしたときに、自動でファイルのアップロードを開始する
+      dropZone.addEventListener('drop', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.background = '#ffffff';
+        var files = e.dataTransfer.files;
+        fileInput.files = files;
+        uploadFileWithProgress(files[0]);
+      }, false);
+      // 「ファイルを選択」ボタンでファイルを選択したときに、自動でファイルのアップロードを開始する
+      fileInput.addEventListener('change', function (e) {
+        uploadFileWithProgress(fileInput.files[0]);
+      });
+
+      /** @param file {File} */
+      function uploadFileWithProgress(file) {
+        uploadFile({
+          file: file,
+          // プログレス表示のためのコールバック
+          onProgress: function (prog) {
+            const progress = prog.bytesUploaded / prog.bytesTotal * 100;
+            progressBar.style.width = `${progress}%`;
+            progressIndicator.innerText = `${fmtSize(prog.bytesUploaded)}/${fmtSize(prog.bytesTotal)} (${progress.toFixed(1)}%)`;
+          },
+          // アップロード完了のタイミングで呼ばれるコールバック
+          onUploadFinished: async function (file) {
+            await updatePreview(file);
+            await updateFiles();
+          }
+        });
+      }
+
+      /** @param file {ApiFile} */
+      function updatePreview(file) {
+        fileNameIndicator.innerText = file.name;
+        while (contentPlaceholder.firstChild) {
+          contentPlaceholder.removeChild(contentPlaceholder.firstChild);
+        }
+        if (file.contentType == null) {
+          return;
+        } else if (file.contentType.startsWith('video/')) {
+          const content = document.createElement('video');
+          // ファイルのURLの後に /ファイル名.mp4 のようにファイル名を付与することができ、
+          // これによってダウンロード時のファイル名を制御することが出来る
+          content.src = `${file.uri}/${file.name}`;
+          content.controls = true;
+          content.width = 800;
+          contentPlaceholder.appendChild(content);
+        } else if (file.contentType.startsWith('image/')) {
+          const content = document.createElement('img');
+          content.src = `${file.uri}/${file.name}`;
+          content.width = 800;
+          contentPlaceholder.appendChild(content);
+        }
+      }
+
+      async function updateFiles() {
+        // ファイルの一覧を取得
+        const res = await fetch('/api/v1/files/', {
+          method: 'GET',
+          cache: 'no-cache'
+        });
+        /** @type {ApiFile[]} */
+        const files =  await res.json();
+
+        while (filesPlaceholder.firstChild) {
+          filesPlaceholder.removeChild(filesPlaceholder.firstChild);
+        }
+
+        const content = document.createElement('table');
+        content.classList.add('attr');
+        const header = document.createElement('tr');
+        header.classList.add('attr');
+        header.innerHTML = '<th class="a">File Name</th><th class="a">Type</th><th class="a">Size</th><th class="a">Updated</th><th class="a">SHA-256</th><th class="a">Download</th>';
+        content.appendChild(header);
+        for (const file of files) {
+          const tr = document.createElement('tr');
+          tr.classList.add('attr');
+          tr.innerHTML = `<td class="a">${file.name}</td><td class="a">${file.contentType}</td><td class="a">${fmtSize(file.size)}</td><td class="a">${file.lastUpdate}</td><td class="a">${file.sha256}</td><td class="a"><a href="${file.uri}/${file.name}">Download</a></td>`;
+          tr.onclick = () => updatePreview(file);
+          content.appendChild(tr);
+        }
+        filesPlaceholder.appendChild(content);
+      }
+
+      /** @param size {number} */
+      function fmtSize(size) {
+        let u = 0;
+        while (size > 1024) { size /= 1024; u++; }
+        return `${size.toFixed(1)} ${['bytes', 'KB', 'MB', 'GB', 'TB'][u]}`;
+      }
+
+      updateFiles();
+    </script>
+  </body>
+</html>
